@@ -6,6 +6,7 @@ import mysql.connector
 from dotenv import load_dotenv
 import pandas as pd
 import os
+import matplotlib.pyplot as plt
 
 load_dotenv()
 
@@ -38,13 +39,16 @@ def get_user_selections():
         submitted = st.form_submit_button(label="Process")
         # Add a text input for make of car
         car_make = st.text_input("Enter the make of the car, e.g 'Toyota'")
+        car_type_avg_gas = st.selectbox(
+            "Car type", ("Sedan", "Wagon", "SUV", "Sports Car")
+        )
 
         if submitted:
             # Use user provided inputs
-            return retail_range, min_mpg, car_type, car_make
+            return retail_range, min_mpg, car_type, car_make, car_type_avg_gas
         else:
             # Send default values
-            return ((20000, 50000), 20, "Sedan", "Toyota")
+            return ((20000, 50000), 20, "Sedan", "Toyota", "Sedan")
 
 
 def exec_query(retail_range, min_mpg, car_type, car_make, cursor):
@@ -68,15 +72,56 @@ def exec_query(retail_range, min_mpg, car_type, car_make, cursor):
     return results_df
 
 
+def query_avg_gas(car_make, type_sel, cursor):
+    # Write the query using input car type
+    query = (
+        f"SELECT SUBSTRING_INDEX(Name, ' ', 1) AS Make, "
+        f"AVG(`Highway Miles Per Gallon`) AS Avg_MPG "
+        f"FROM cars "
+        f"WHERE Type = '{type_sel}' "
+        f"GROUP BY Make"
+    )
+    # Output query
+    print(f"Avg. gas query: '{query}'")
+
+    # Execute the query
+    cursor.execute(query)
+
+    # Put results in a DataFrame
+    columns = [desc[0] for desc in cursor.description]
+    results_df = pd.DataFrame(cursor.fetchall(), columns=columns)
+    return results_df
+
+
 def main():
     st.title("Car database")
     db, cursor = connect_to_db()
-    # Add new input car_make
-    retail_range, min_mpg, car_type, car_make = get_user_selections()
+    # Add new input car_make. And car type selection for avg. gas
+    retail_range, min_mpg, car_type, car_make, car_type_avg_gas = get_user_selections()
     results = exec_query(retail_range, min_mpg, car_type, car_make, cursor)
+    avg_gas = query_avg_gas(car_make, car_type_avg_gas, cursor)
     st.markdown("---")
     st.subheader("Matches")
     st.dataframe(results, width=900, height=300)
+
+    # --- Matplotlib Graph Generation ---
+    # Create the figure and axis
+    fig, ax = plt.subplots()
+
+    # Generate horizontal bar graph (Make on Y, Avg_MPG on X)
+    ax.barh(
+        avg_gas["Make"],
+        avg_gas["Avg_MPG"],
+        edgecolor=["orange", "green", "red"],
+        color="white",
+    )
+
+    # Set the x-axis label to match the sketch
+    ax.set_xlabel("Average mpg (highway)")
+
+    # Render the plot in Streamlit
+    st.pyplot(fig)
+
     close_connection(db, cursor)
 
 
